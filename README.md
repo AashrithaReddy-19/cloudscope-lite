@@ -1,5 +1,7 @@
 # CloudScope Lite
 
+**Live demo:** http://cloudscope-lite-demo.eba-dvsfqdx3.ap-south-1.elasticbeanstalk.com — plain HTTP, no custom domain (see [Security design](#security-design) and `docs/aws-deployment.md` for why). This is a student-project deployment, not a production service — please don't submit real credentials or sensitive data through it.
+
 CloudScope Lite is a pre-deployment AWS cost simulator. You paste or upload a Terraform configuration; it tells you what that infrastructure would actually cost per month, whether it fits your budget, and where you could save money — **before** you ever run `terraform apply`. It never runs, executes, or deploys the Terraform you give it. It only reads and prices it.
 
 This project was built as a cloud-computing course demonstration: a small full-stack application (React + FastAPI + PostgreSQL) deployed on real AWS infrastructure with Terraform, showing how a team would actually design, secure, and ship a service like this in production — at a scale and cost appropriate for a student budget.
