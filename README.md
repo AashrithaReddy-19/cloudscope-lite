@@ -26,25 +26,57 @@ Terraform tells you *what* it will create. It doesn't tell you *what that will c
 
 ## How it works, end to end
 
-```
-Browser (React)
-   │  same-origin HTTP, relative /api/... calls
-   ▼
-FastAPI (Elastic Beanstalk)
-   │
-   ├─ JWT auth ────────────────────────────► every /api/* route except /health
-   ├─ python-hcl2 parser ──────────────────► reads pasted/uploaded Terraform as data
-   ├─ pricing catalogue (JSON, on disk) ───► rate lookup by region + resource type
-   ├─ cost calculator ─────────────────────► Decimal-precision formulas per resource
-   ├─ budget policy ───────────────────────► PASS / WARNING / FAIL
-   ├─ recommendation engine ───────────────► top cost contributors, explained
-   ├─ forecasting / anomaly detection ─────► on uploaded historical CSV data
-   │
-   ▼
-PostgreSQL (RDS)  ── users, projects, analyses, resource estimates, recommendations, historical costs
+```mermaid
+sequenceDiagram
+    participant U as User (browser)
+    participant F as React (served by FastAPI)
+    participant A as FastAPI
+    participant P as Parser (python-hcl2)
+    participant C as Pricing / cost engine
+    participant D as PostgreSQL (RDS)
+
+    U->>F: Paste or upload Terraform
+    F->>A: POST /api/analyze  (JWT in header)
+    A->>A: Check JWT, check file size / UTF-8 / binary
+    A->>P: normalize_terraform_text() then parse
+    P-->>A: resources[] + unsupported_warnings[]
+    A->>C: calculate(resources, region, scenario)
+    C-->>A: per-resource cost rows, formulas, total
+    A->>A: evaluate_budget() -> PASS / WARNING / FAIL
+    A->>A: recommend() -> explainable suggestions
+    A->>D: save Analysis + ResourceEstimate + Recommendation
+    D-->>A: saved
+    A-->>F: JSON report
+    F-->>U: cost breakdown, verdict, recommendations
 ```
 
 The frontend is a single-page React app that Elastic Beanstalk builds and serves from the **same origin** as the API — the browser never makes a cross-origin request, so there's no CORS to configure in production and no separate hosting/CDN to manage.
+
+## Analysis pipeline: how a submission is validated, parsed, and priced
+
+This is the method the backend follows for every paste or upload, in order — safety checks always run before the text is ever handed to the parser, and a missing price always fails loudly instead of silently becoming zero:
+
+```mermaid
+flowchart TD
+    Start[Pasted text or uploaded .tf file] --> Size{Under 1 MB?}
+    Size -- No --> R1[422: file exceeds size limit]
+    Size -- Yes --> Binary{Contains a null byte?}
+    Binary -- Yes --> R2[422: binary content rejected]
+    Binary -- No --> Utf8{Valid UTF-8?}
+    Utf8 -- No --> R3[422: must be UTF-8 text]
+    Utf8 -- Yes --> Norm["normalize_terraform_text()<br/>strip BOM, CRLF/CR to LF"]
+    Norm --> Parse["hcl2.load()<br/>parsed as data only, never executed"]
+    Parse -- Malformed --> R4[422: malformed Terraform]
+    Parse -- OK --> Resolve[Resolve simple variable defaults]
+    Resolve --> Classify{Resource type<br/>supported?}
+    Classify -- "No (e.g. aws_lambda_function)" --> Warn[Add unsupported-resource warning]
+    Classify -- "Yes (aws_instance, aws_ebs_volume,<br/>aws_s3_bucket, aws_db_instance)" --> Price[Look up rate in pricing catalogue]
+    Price -- Missing for this region --> R5[422: pricing unavailable - never treated as $0]
+    Price -- Found --> Cost[Compute Decimal-precision cost formula]
+    Warn --> Report[Assemble report: costs, warnings, budget verdict, recommendations]
+    Cost --> Report
+    Report --> Save[(Save to PostgreSQL)]
+```
 
 ## Architecture
 
@@ -54,6 +86,31 @@ One Docker image, built in two stages and run on one Elastic Beanstalk environme
 2. A Python stage installs FastAPI, copies in the compiled React files, and serves both from the same Uvicorn process. Static assets are served under `/assets`; any other unmatched, non-`/api` path falls back to the React app itself (so client-side routing like `/projects/3` works on a full page load); any unmatched `/api/*` path returns a normal JSON 404.
 
 Elastic Beanstalk manages the underlying EC2 instance and its EBS volume directly — there is no separate, hand-provisioned server.
+
+```mermaid
+graph TB
+    User(("Browser")) -->|"HTTP :80, same-origin /api/... calls"| EB
+
+    subgraph AWS["AWS Account - ap-south-1"]
+        subgraph EnvBox["Elastic Beanstalk Environment"]
+            EB["EC2 t3.micro (Docker)<br/>FastAPI + built React app"]
+        end
+
+        EB -->|"reads secret by ARN"| SM["Secrets Manager<br/>RDS master password"]
+        EB -->|"SQL, private security group only"| RDS[("RDS PostgreSQL<br/>private, Single-AZ")]
+        EB -->|"reads deployment bundle"| S3A["S3: artifact bucket<br/>fully private"]
+        EB -->|"app + health logs, metrics"| CW["CloudWatch<br/>Logs + environment-health alarm"]
+        CW -->|"alarm fires"| SNS["SNS topic"]
+        SNS -->|"email"| Owner(("Account owner"))
+        EB -.->|"on-demand rate lookup"| PL["AWS Price List API"]
+        IAM["IAM roles<br/>least-privilege"] -.->|"scopes access for"| EB
+        Budget["AWS Budgets<br/>$5/month email alert"] -.->|"watches real spend on"| AWS
+        S3R["S3: reserved bucket<br/>fully private, unused"]
+    end
+
+    classDef store fill:#e8f0fe,stroke:#4285f4;
+    class RDS,S3A,S3R,SM store;
+```
 
 ## AWS services used, and why
 
@@ -151,4 +208,21 @@ Excluded from every estimate: S3 request/transfer charges, taxes, discounts, fre
 
 ## Deployment
 
-Infrastructure is defined in `infrastructure/` (Terraform). See `docs/aws-deployment.md` for the full deployment guide, `docs/demonstration-guide.md` for a walkthrough script, and `docs/architecture.md` for a short architecture note. In short: build the deployment bundle (`scripts/build_beanstalk_bundle.ps1`), review a freshly generated Terraform plan, get it explicitly approved, then apply it — never reuse an older saved plan, since Terraform plans go stale the moment any referenced file changes.
+Infrastructure is defined in `infrastructure/` (Terraform). See `docs/aws-deployment.md` for the full deployment guide, `docs/demonstration-guide.md` for a walkthrough script, and `docs/architecture.md` for a short architecture note.
+
+Every deploy follows the same process — a plan is always freshly generated and explicitly approved before anything touches AWS, and the old application version is only ever removed after the new one is confirmed to exist:
+
+```mermaid
+flowchart LR
+    A[Change backend / frontend / infra code] --> B[Run tests + Ruff + typecheck]
+    B --> C["Build deployment bundle<br/>scripts/build_beanstalk_bundle.ps1"]
+    C --> D["terraform plan -out=&lt;name&gt;.tfplan"]
+    D --> E{Plan reviewed<br/>and explicitly approved?}
+    E -- No --> D
+    E -- Yes --> F["terraform apply &lt;name&gt;.tfplan"]
+    F --> G[New S3 bundle object created]
+    G --> H[New Elastic Beanstalk application version created]
+    H --> I[Existing environment updated in place]
+    I --> J[Old bundle object + old version destroyed]
+    J --> K["Read-only verification:<br/>/health, routes, security groups, RDS, S3 privacy"]
+```
