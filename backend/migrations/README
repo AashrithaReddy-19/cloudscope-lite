@@ -1,0 +1,2 @@
+Alembic-ready schema lives in app/models.py. Generate the first revision with `alembic revision --autogenerate -m initial` after setting DATABASE_URL.
+

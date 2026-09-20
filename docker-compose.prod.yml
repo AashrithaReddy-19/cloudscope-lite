@@ -1,0 +1,5 @@
+services:
+  backend: {restart: unless-stopped}
+  db: {restart: unless-stopped}
+  frontend: {restart: unless-stopped}
+

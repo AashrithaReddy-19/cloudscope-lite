@@ -1,0 +1,10 @@
+.git
+.env
+**/__pycache__
+**/.pytest_cache
+**/.pytest_tmp
+**/node_modules
+frontend/dist
+backend/*.db
+*.tfstate*
+.terraform

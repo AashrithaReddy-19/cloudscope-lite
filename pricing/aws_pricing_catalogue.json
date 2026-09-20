@@ -1,0 +1,10 @@
+{
+  "effective_date": "2026-09-19",
+  "currency": "USD",
+  "source": "AWS Price List API (aws pricing get-products), On-Demand, Shared tenancy Linux EC2 / GP3 EBS / S3 Standard first-tier / RDS PostgreSQL Single-AZ",
+  "source_references": ["https://aws.amazon.com/ec2/pricing/on-demand/", "https://aws.amazon.com/ebs/pricing/", "https://aws.amazon.com/s3/pricing/", "https://aws.amazon.com/rds/postgresql/pricing/"],
+  "regions": {
+    "us-east-1": {"ec2": {"t3.micro": "0.0104", "t3.small": "0.0208"}, "ebs": {"gp3": "0.08"}, "s3": {"STANDARD": "0.023"}, "rds": {"db.t4g.micro": "0.016", "storage_gp3": "0.115"}},
+    "ap-south-1": {"ec2": {"t3.micro": "0.0112", "t3.small": "0.0224"}, "ebs": {"gp3": "0.0912"}, "s3": {"STANDARD": "0.025"}, "rds": {"db.t4g.micro": "0.021", "storage_gp3": "0.131"}}
+  }
+}

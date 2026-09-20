@@ -1,0 +1,14 @@
+aws_region             = "ap-south-1"
+project_name           = "cloudscope-lite"
+environment            = "student-demo"
+frontend_bucket_prefix = "replace-with-unique-prefix"
+artifact_bucket_prefix = "replace-with-private-artifact-prefix"
+
+database_name           = "cloudscope"
+database_username       = "cloudscope_admin"
+database_instance_class = "db.t4g.micro"
+
+budget_limit_usd = 5
+create_budget    = true
+budget_email     = "student@example.com"
+alarm_email      = null

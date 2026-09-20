@@ -1,0 +1,46 @@
+# AWS and environment secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.csv
+
+# Terraform and AWS installer downloads
+*.msi
+terraform_*.zip
+terraform_*darwin*/
+terraform_*windows*/
+
+# Terraform local and sensitive files
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.plan
+terraform.tfvars
+terraform.tfvars.json
+*.tfvars
+!terraform.tfvars.example
+crash.log
+crash.*.log
+.terraform.lock.hcl.backup
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.pytest_tmp/
+.ruff_cache/
+*.db
+
+# Node
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+.build/
+cloudscope-backend.zip
+
+# Generated reports
+cost-report.json
